@@ -7,12 +7,13 @@ import math
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self,encoder,decoder,src_embed,tgt_embed):
+    def __init__(self,d_model,h,ff_model,N,src_vocab,tgt_vocab,dropout=0.1):
         super(EncoderDecoder,self).__init__()
-        self.encoder=encoder
-        self.decoder=decoder
-        self.src_embed=src_embed
-        self.tgt_embed=tgt_embed
+        self.encoder=Encoder(d_model,h,ff_model,N,dropout)
+        self.decoder=Decoder(d_model,h,ff_model,N,dropout)
+        self.src_embed=nn.Sequential(Embedding(src_vocab,d_model),PositionalEncoding(d_model,dropout))
+        self.tgt_embed=nn.Sequential(Embedding(tgt_vocab,d_model),PositionalEncoding(d_model,dropout))
+        self.genrator=Generator(d_model,tgt_vocab)
 
     def forward(self,src,tgt,src_mask,tgt_mask):
         return self.decode(self.encode(src),tgt,src_mask,tgt_mask)
@@ -25,6 +26,14 @@ class EncoderDecoder(nn.Module):
 
 def clone(layer,N):
     return nn.ModuleList([copy.deepcopy(layer) for _ in range(N)])
+
+class Generator(nn.Module):
+    def __init__(self,vocab,d_model):
+        super(Generator,self).__init__()
+        self.pro=nn.Linear(d_model,vocab)
+
+    def forward(self,x):
+        return F.log_softmax(self.pro(x),dim=-1)
 
 class LayerNorm(nn.Module):
     def __init__(self,size,eps=1e-6):
@@ -49,10 +58,10 @@ class SublayerConnection(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self,layer,N):
+    def __init__(self,size,h,ff_model,N,dropout=0.1):
         super(Encoder,self).__init__()
-        self.list=clone(layer,N)
-        self.norm=LayerNorm(layer.size)
+        self.list=clone(EncoderLayer(size,h,ff_model,dropout=0.1),N)
+        self.norm=LayerNorm(size)
 
     def forward(self,x,mask):
         for l in self.list:
@@ -60,10 +69,10 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 class Decoder(nn.Module):
-    def __init__(self,layer,N):
+    def __init__(self,size,h,ff_model,N,dropout=0.1):
         super(Decoder,self).__init__()
-        self.list=clone(layer,N)
-        self.norm=LayerNorm(layer.size)
+        self.list=clone(DecoderLayer(size,h,ff_model,dropout=0.1),N)
+        self.norm=LayerNorm(size)
 
     def forward(self,x,memory,src_mask,tgt_mask):
         for l in self.list:
@@ -159,5 +168,22 @@ class PositionalEncoding(nn.Module):
         x=x+Variable(self.pe[:,:x.size(1)],requires_grad=False)
         return self.dropout(x)
 
-def build_model():
-    pass
+class Embedding(nn.Module):
+    def __init__(self,vocab,d_model):
+        super(Embedding,self).__init__()
+        self.embedding=nn.Embedding(vocab,d_model)
+        self.d_model=d_model
+
+    def forward(self,x):
+        return self.embedding(x)*math.sqrt(self.d_model)
+
+
+def build_model(src_vocab,tgt_vocab,N=6,d_model=512,d_ff=2048,\
+                headers=8,dropout=0.1):
+    model=EncoderDecoder(d_model,headers,d_ff,N,src_vocab,tgt_vocab,dropout)
+    return model
+
+
+if __name__=="__main__":
+    model=build_model(100,100)
+    print(model)
